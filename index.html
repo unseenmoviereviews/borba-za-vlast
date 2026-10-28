@@ -198,9 +198,20 @@ h1 small{display:block;font-size:.5em;color:#FFB9B3;margin-top:8px}
 .qz-top input{font:inherit;padding:8px 10px;border:1px solid var(--rule);background:var(--paper);color:var(--ink);flex:1 1 220px;min-width:0}
 .qz-score{font-family:var(--f-mono);font-size:14px;color:var(--muted)}
 .qz-score b{color:var(--red);font-size:18px}
-.q{border-bottom:1px solid var(--rule);padding:18px 0}
-.q .qn{font-family:var(--f-mono);font-size:12px;color:var(--red);text-transform:uppercase;letter-spacing:.08em}
-.q .qt{margin:4px 0 12px;font-weight:700;font-size:17px;line-height:1.35}
+.qq{border-bottom:1px solid var(--rule);padding:18px 0}
+.qhead{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.qtime{font-family:var(--f-mono);font-size:20px;font-weight:700;color:var(--ink);min-width:3.2em;text-align:right}
+.qtime.low{color:var(--red);animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.qtime.low{animation:none}}
+.tbar{height:6px;background:var(--rule);margin:6px 0 4px;overflow:hidden}
+.tbar i{display:block;height:100%;width:100%;background:var(--ok);transition:width .2s linear}
+.tbar.low i{background:var(--red)}
+.qq.answered .tbar,.qq.answered .qtime{opacity:.4;animation:none}
+.qz-start{padding:18px 0}
+.qz-start p{margin:0 0 12px;max-width:62ch}
+.qq .qn{font-family:var(--f-mono);font-size:12px;color:var(--red);text-transform:uppercase;letter-spacing:.08em}
+.qq .qt{margin:4px 0 12px;font-weight:700;font-size:17px;line-height:1.35}
 .opts{display:grid;gap:6px}
 .opt{cursor:pointer;text-align:left;display:flex;gap:10px;align-items:flex-start;padding:9px 12px;border:1px solid var(--rule);background:var(--paper)}
 .opt::before{content:"";flex:none;width:16px;height:16px;margin-top:3px;border:2px solid var(--muted);border-radius:50%}
@@ -1032,8 +1043,17 @@ const grade=n=>n>=13?5:n>=10?4:n>=7?3:2;
 function build(){
   done=0;score=0;attempt++;active=true;
   quiz.innerHTML=`<div class="qz-top"><input id="qz-name" placeholder="Фамилия и имя, группа" aria-label="Фамилия и имя, группа"><span class="qz-score">Верно: <b id="qz-s">0</b> из ${TEST.length} · отвечено <span id="qz-d">0</span> · <span class="lv${leaves?" warn":""}">выходов со страницы: <b id="qz-l">${leaves}</b></span></span></div><p class="qz-rule">После открытия теста считается каждый уход со страницы: переключение на другую вкладку или приложение, сворачивание окна. Число выходов увидит преподаватель.</p><div id="qz-list"></div><div id="qz-end"></div>`;
+  clearInterval(tick);
   const list=document.getElementById("qz-list");
-  TEST.forEach((q,i)=>list.appendChild(makeQ(q,i)));
+  list.innerHTML=`<div class="qz-start"><p>В тесте ${TEST.length} вопросов, на каждый даётся <b>1 минута</b>. Вопросы идут по одному, вернуться к прошлому нельзя. Если время вышло, вопрос засчитывается как неверный.</p><button type="button" class="btn solid" id="qz-go">Начать тест</button></div>`;
+  document.getElementById("qz-go").onclick=()=>show(0);
+}
+let tick=null;
+const LIMIT=60;
+function show(i){
+  const list=document.getElementById("qz-list");list.innerHTML="";
+  list.appendChild(makeQ(TEST[i],i));
+  document.getElementById("test").scrollIntoView({behavior:"smooth",block:"start"});
 }
 function opts(q,multi){
   const wrap=document.createElement("div");wrap.className="opts"+(multi?" multi":"");
@@ -1042,8 +1062,8 @@ function opts(q,multi){
   return wrap;
 }
 function makeQ(q,i){
-  const el=document.createElement("div");el.className="q";
-  el.innerHTML=`<div class="qn">Вопрос ${i+1} из ${TEST.length}</div><p class="qt">${q.q}</p>`;
+  const el=document.createElement("div");el.className="qq";
+  el.innerHTML=`<div class="qhead"><div class="qn">Вопрос ${i+1} из ${TEST.length}</div><div class="qtime" aria-live="off"><span class="tsec">1:00</span></div></div><div class="tbar"><i></i></div><p class="qt">${q.q}</p>`;
   const body=document.createElement("div");el.appendChild(body);
   let check, ready;
   if(q.t==="one"||q.t==="photo"||q.t==="many"){
@@ -1093,17 +1113,31 @@ function makeQ(q,i){
   const btn=document.createElement("button");btn.type="button";btn.className="btn solid";btn.textContent="Ответить";
   const v=document.createElement("span");v.className="verdict";v.setAttribute("aria-live","polite");
   act.append(btn,v);el.appendChild(act);
-  btn.onclick=()=>{
-    if(!ready()){v.className="verdict bad";v.textContent="Сначала дайте ответ";return}
-    const ok=check();btn.remove();v.className="verdict "+(ok?"ok":"bad");v.textContent=ok?"Верно":"Неверно";
+  let answered=false;
+  const submit=(timeout)=>{
+    if(answered)return;
+    if(!timeout&&!ready()){v.className="verdict bad";v.textContent="Сначала дайте ответ";return}
+    answered=true;clearInterval(tick);
+    const given=ready();let ok=check();if(timeout&&!given)ok=false;
+    btn.remove();el.classList.add("answered");v.className="verdict "+(ok?"ok":"bad");v.textContent=timeout&&!ok?"Время вышло":ok?"Верно":"Неверно";
     el.insertAdjacentHTML("beforeend",`<p class="qex">${q.ex}</p>`);
     done++;if(ok)score++;document.getElementById("qz-s").textContent=score;document.getElementById("qz-d").textContent=done;
-    if(done===TEST.length)finish();
+    const nx=document.createElement("button");nx.type="button";nx.className="btn solid";
+    if(i<TEST.length-1){nx.textContent="Следующий вопрос →";nx.onclick=()=>show(i+1)}
+    else{nx.textContent="Завершить тест";nx.onclick=()=>{nx.remove();finish()}}
+    act.prepend(nx);nx.focus({preventScroll:true});
   };
+  btn.onclick=()=>submit(false);
+  const t0=Date.now(),ts=el.querySelector(".tsec"),bar=el.querySelector(".tbar i"),tw=el.querySelector(".qtime");
+  clearInterval(tick);
+  tick=setInterval(()=>{const left=Math.max(0,LIMIT-(Date.now()-t0)/1000);const sec=Math.ceil(left);
+    ts.textContent=`${Math.floor(sec/60)}:${String(sec%60).padStart(2,"0")}`;bar.style.width=(left/LIMIT*100)+"%";
+    tw.classList.toggle("low",left<=10);el.querySelector(".tbar").classList.toggle("low",left<=10);
+    if(left<=0)submit(true)},200);
   return el;
 }
 function finish(){
-  active=false;
+  active=false;clearInterval(tick);
   const nm=document.getElementById("qz-name").value.trim();
   const d=new Date();const ds=d.toLocaleDateString("ru-RU")+" "+d.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"});
   document.getElementById("qz-end").innerHTML=`<div class="qz-end"><div class="grade">Оценка <b>${grade(score)}</b></div><div class="big">${score} / ${TEST.length}</div><p class="lvres${leaves?" warn":""}">Выходов со страницы: ${leaves}${attempt>1?` · попытка ${attempt}`:""}</p><p>${nm?nm.replace(/[<>&]/g,""):"Без имени"} · ${ds}</p><p>Покажите этот экран преподавателю.</p><div class="qact" style="justify-content:center"><button type="button" class="btn" id="qz-again" style="background:var(--on-red);color:var(--red-deep)">Пройти заново</button></div></div>`;
